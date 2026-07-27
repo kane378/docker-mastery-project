@@ -21,4 +21,3 @@ def test_info():
     response = client.get("/info")
     assert response.status_code == 200
     assert response.json()["app"] == "docker-mastery-demo"
-

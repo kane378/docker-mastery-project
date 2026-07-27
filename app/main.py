@@ -36,4 +36,3 @@ def info():
         "version": app.version,
         "phase": "3 - advanced",
     }
-
