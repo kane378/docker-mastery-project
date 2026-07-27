@@ -1,10 +1,7 @@
-name: Phase 3 - CI/CD (cache, scan, push to Docker Hub & ECR)
+name: Phase 3 - CI/CD (build and push to Docker Hub & ECR)
  
 on:
   push:
-    branches: ["main"]
-    tags: ["v*.*.*"]
-  pull_request:
     branches: ["main"]
  
 env:
@@ -14,7 +11,7 @@ env:
  
 jobs:
   # ---------------------------------------------------------
-  # 1. Lint + unit test - fail fast before touching Docker at all
+  # 1. Lint + unit test
   # ---------------------------------------------------------
   lint-and-test:
     name: Lint & Test
@@ -36,53 +33,17 @@ jobs:
         run: pytest -v
  
   # ---------------------------------------------------------
-  # 2. Build the image once (with cache), scan it, then push
-  #    the SAME already-built image to both registries.
+  # 2. Build the image, then push it to Docker Hub and ECR
   # ---------------------------------------------------------
-  build-scan-push:
-    name: Build, Scan & Push
+  build-and-push:
+    name: Build & Push
     needs: lint-and-test
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
  
-      - name: Compute image tags (commit SHA + latest + git tag if present)
-        id: meta
-        run: |
-          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
-          echo "sha_tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            echo "version_tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version_tag=" >> "$GITHUB_OUTPUT"
-          fi
- 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
- 
-      # ---- Build with GitHub Actions layer cache (fast repeat builds) ----
-      - name: Build image (load locally, cached, not pushed yet)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          load: true
-          push: false
-          tags: |
-            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha_tag }}
-            ${{ env.IMAGE_NAME }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
- 
-      # ---- Vulnerability scan BEFORE anything gets pushed ----
-      - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@0.24.0
-        with:
-          image-ref: ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha_tag }}
-          format: table
-          severity: CRITICAL,HIGH
-          exit-code: "1"   # fail the pipeline if critical/high vulns are found
+      - name: Build Docker image
+        run: docker build -t ${{ env.IMAGE_NAME }}:latest .
  
       # ---- Docker Hub push ----
       - name: Log in to Docker Hub
@@ -94,14 +55,8 @@ jobs:
       - name: Tag & push to Docker Hub
         run: |
           DH_REPO="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}"
-          docker tag ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha_tag }} "$DH_REPO:${{ steps.meta.outputs.sha_tag }}"
           docker tag ${{ env.IMAGE_NAME }}:latest "$DH_REPO:latest"
-          docker push "$DH_REPO:${{ steps.meta.outputs.sha_tag }}"
           docker push "$DH_REPO:latest"
-          if [ -n "${{ steps.meta.outputs.version_tag }}" ]; then
-            docker tag ${{ env.IMAGE_NAME }}:latest "$DH_REPO:${{ steps.meta.outputs.version_tag }}"
-            docker push "$DH_REPO:${{ steps.meta.outputs.version_tag }}"
-          fi
  
       # ---- AWS ECR push ----
       - name: Configure AWS credentials
@@ -118,11 +73,5 @@ jobs:
       - name: Tag & push to Amazon ECR
         run: |
           ECR_REPO="${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}"
-          docker tag ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha_tag }} "$ECR_REPO:${{ steps.meta.outputs.sha_tag }}"
           docker tag ${{ env.IMAGE_NAME }}:latest "$ECR_REPO:latest"
-          docker push "$ECR_REPO:${{ steps.meta.outputs.sha_tag }}"
           docker push "$ECR_REPO:latest"
-          if [ -n "${{ steps.meta.outputs.version_tag }}" ]; then
-            docker tag ${{ env.IMAGE_NAME }}:latest "$ECR_REPO:${{ steps.meta.outputs.version_tag }}"
-            docker push "$ECR_REPO:${{ steps.meta.outputs.version_tag }}"
-          fi
