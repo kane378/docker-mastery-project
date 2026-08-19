@@ -41,11 +41,6 @@ docker build -t docker-mastery:phase3 .
 docker run -d --name phase3-app -p 8002:8000 docker-mastery:phase3
 ```
 
-Then visit:
-- Phase 1 → http://localhost:8000/docs
-- Phase 2 → http://localhost:8001/docs
-- Phase 3 → http://localhost:8002/docs
-
 ## Compare Image Sizes Side by Side
 ```bash
 docker images | grep docker-mastery

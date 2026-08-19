@@ -30,7 +30,7 @@ jobs:
         run: flake8 app test_main.py --max-line-length=100
  
       - name: Run tests
-        run: pytest -v
+        run: pytest test_main.py -v
  
   # ---------------------------------------------------------
   # 2. Build the image, then push it to Docker Hub and ECR
